@@ -27,7 +27,10 @@ pub opaque type Request {
 }
 
 pub type Response {
-  Response(status: Int, content: String, body: Option(String))
+  SuccessResponse(status: Int, mimetype: String, body: String)
+  InputResponse(status: Int, prompt: String)
+  RedirectResponse(status: Int, uri: String)
+  ErrorResponse(status: Int, message: Option(String))
 }
 
 pub opaque type GleminiError {
@@ -43,23 +46,7 @@ pub fn main() {
     new_config()
     |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
     |> add_handler(fn(_) {
-      [
-        gemtext.heading1("Welcome to Glemini!"),
-        gemtext.link_with_caption("/", "Home"),
-        gemtext.link("/"),
-        gemtext.blank_line(),
-        gemtext.blank_line(),
-        gemtext.text("just some text"),
-        gemtext.blank_line(),
-        gemtext.list_item("item 1"),
-        gemtext.list_item("item 2"),
-        gemtext.list_item("item 3"),
-        gemtext.blank_line(),
-        gemtext.blank_line(),
-        gemtext.preformatted("              this is \n    preformatted \ntext"),
-        gemtext.blank_line(),
-        gemtext.preformatted_with_caption("fn gleam() {}", "gleam"),
-      ]
+      [gemtext.heading1("Welcome to Glemini!")]
       |> gemtext_response()
     })
 
@@ -69,6 +56,8 @@ pub fn main() {
   process.sleep_forever()
 }
 
+/// Start the gemini server.
+/// Expects a `ServerConfig`
 pub fn start(
   config: ServerConfig,
 ) -> Result(Subject(supervisor.Message), StartError) {
@@ -87,12 +76,14 @@ pub fn start(
 
 // Config
 
+/// Creates a new server configuration with missing certificate and empty request handler.
 pub fn new_config() -> ServerConfig {
   ServerConfig(port: 1965, certfile: "", keyfile: "", request_handler: fn(_) {
-    Response(51, "", None)
+    ErrorResponse(51, None)
   })
 }
 
+/// Adds ssl configuration to the server configuration.
 pub fn add_ssl(
   config: ServerConfig,
   certfile certfile: String,
@@ -101,6 +92,17 @@ pub fn add_ssl(
   ServerConfig(..config, certfile: certfile, keyfile: keyfile)
 }
 
+/// Adds a request handler to the server configuration.
+/// The request handler is your main function where you'll do routing.
+/// # Example
+/// ```gleam
+/// fn my_request_handler(req: Request) -> Response {
+///   case req.path {
+///     "/hello" -> gemtext_response([gemtext.heading1("Hello, world!")])
+///     _ -> not_found_response()
+///   }
+/// }
+/// ```
 pub fn add_handler(
   config: ServerConfig,
   request_handler: fn(Request) -> Response,
@@ -110,24 +112,88 @@ pub fn add_handler(
 
 // Response functions
 
+// Success
+
 pub fn gemtext_response(lines: gemtext.Lines) -> Response {
-  Response(20, "text/gemini", Some(gemtext.to_string(lines)))
+  SuccessResponse(20, "text/gemini", gemtext.to_string(lines))
 }
 
+// Input
+
 pub fn input_response(prompt: String) -> Response {
-  Response(10, prompt, None)
+  InputResponse(10, prompt)
 }
 
 pub fn sensitive_input_response(prompt: String) -> Response {
-  Response(11, prompt, None)
+  InputResponse(11, prompt)
 }
 
+// Redirects
+
 pub fn temporary_redirect_response(uri: String) -> Response {
-  Response(30, uri, None)
+  RedirectResponse(30, uri)
 }
 
 pub fn permanent_redirect_response(uri: String) -> Response {
-  Response(31, uri, None)
+  RedirectResponse(31, uri)
+}
+
+// Temporary errors
+
+pub fn temporary_failure_response(message: String) -> Response {
+  ErrorResponse(40, Some(message))
+}
+
+pub fn server_unavailable_response() -> Response {
+  ErrorResponse(41, None)
+}
+
+pub fn cgi_error_response() -> Response {
+  ErrorResponse(42, None)
+}
+
+pub fn proxy_error_response() -> Response {
+  ErrorResponse(43, None)
+}
+
+pub fn slow_down_response() -> Response {
+  ErrorResponse(44, None)
+}
+
+// Permanent errors
+
+pub fn permanent_failure_response(message: String) -> Response {
+  ErrorResponse(50, Some(message))
+}
+
+pub fn not_found_response() -> Response {
+  ErrorResponse(51, None)
+}
+
+pub fn gone_response() -> Response {
+  ErrorResponse(52, None)
+}
+
+pub fn proxy_request_refused_response() -> Response {
+  ErrorResponse(53, None)
+}
+
+pub fn bad_request_response() -> Response {
+  ErrorResponse(59, None)
+}
+
+// Certificate errors
+
+pub fn client_certificate_required_response() -> Response {
+  ErrorResponse(60, None)
+}
+
+pub fn certificate_not_authorised_response() -> Response {
+  ErrorResponse(61, None)
+}
+
+pub fn certificate_not_valid_response() -> Response {
+  ErrorResponse(62, None)
 }
 
 // Helpers
@@ -169,9 +235,20 @@ fn parse_request(req: BitArray) -> Result(Request, GleminiError) {
 }
 
 fn response_to_string(res: Response) -> String {
-  case res.body {
-    Some(body) ->
-      int.to_string(res.status) <> " " <> res.content <> "\r\n" <> body
-    None -> int.to_string(res.status) <> " " <> res.content <> "\r\n"
+  case res {
+    SuccessResponse(status, mimetype, body) ->
+      int.to_string(status) <> " " <> mimetype <> "\r\n" <> body
+    InputResponse(status, prompt) ->
+      int.to_string(status) <> " " <> prompt <> "\r\n"
+    RedirectResponse(status, uri) ->
+      int.to_string(status) <> " " <> uri <> "\r\n"
+    ErrorResponse(status, message) ->
+      int.to_string(status)
+      <> " "
+      <> case message {
+        Some(message) -> message
+        None -> ""
+      }
+      <> "\r\n"
   }
 }
