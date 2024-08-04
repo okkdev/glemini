@@ -1,4 +1,20 @@
 //// Main Glemini module. Contains the server and response functions.
+//// # Example usage:
+//// ```gleam
+//// io.println("Starting server!")
+//// let config =
+////   new_config()
+////   |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
+////   |> add_handler(fn(_) {
+////     case req.path {
+////       "/" -> gemtext_response([gemtext.heading1("Welcome to Glemini!")])
+////       _ -> not_found_response()
+////     }
+////   })
+//// let assert Ok(_) = start(config)
+//// io.println("Server running!")
+//// process.sleep_forever()
+//// ```
 
 import gleam/bit_array
 import gleam/bytes_builder
@@ -78,8 +94,10 @@ pub fn start(
 ) -> Result(Subject(supervisor.Message), StartError) {
   glisten.handler(fn(_conn) { #(Nil, None) }, fn(req, _state, conn) {
     let assert Packet(req) = req
-    let assert Ok(res) = handle_gemini_request(req, config.request_handler)
-    let assert Ok(_) = glisten.send(conn, bytes_builder.from_string(res))
+    let response =
+      handle_gemini_request(req, config.request_handler)
+      |> response_to_string
+    let assert Ok(_) = glisten.send(conn, bytes_builder.from_string(response))
     actor.Stop(process.Normal)
   })
   |> glisten.serve_ssl(
@@ -212,9 +230,9 @@ pub fn proxy_request_refused_response() -> Response {
   ErrorResponse(53, None)
 }
 
-/// Creates a bad request response, status 59.
-pub fn bad_request_response() -> Response {
-  ErrorResponse(59, None)
+/// Creates a bad request response, status 59, with a given message.
+pub fn bad_request_response(message: String) -> Response {
+  ErrorResponse(59, Some(message))
 }
 
 // Certificate errors
@@ -240,12 +258,19 @@ pub fn certificate_not_valid_response(message: String) -> Response {
 fn handle_gemini_request(
   req: BitArray,
   handler: fn(Request) -> Response,
-) -> Result(String, GleminiError) {
-  use req <- result.try(parse_request(req))
+) -> Response {
+  case parse_request(req) {
+    Ok(request) -> handler(request)
+    Error(error) -> error_handler(error)
+  }
+}
 
-  handler(req)
-  |> response_to_string
-  |> Ok
+fn error_handler(error: GleminiError) -> Response {
+  case error {
+    RequestParseError -> bad_request_response("Couldn't parse request.")
+    RequestSchemeError -> bad_request_response("Bad request scheme.")
+    _ -> temporary_failure_response("Unknown error")
+  }
 }
 
 /// Parse a request from a BitArray into a Request type.
