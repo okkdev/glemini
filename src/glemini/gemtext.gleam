@@ -1,3 +1,20 @@
+//// A helper module for generating gemtext.
+//// # Example:
+//// ```gleam
+//// [
+////   heading1("Welcome to Glemini!"),
+////   text("This is a simple gemini server library"),
+////   link_with_caption("gemini://geminiprotocol.net", "Gemini Website"),
+//// ]
+//// |> lines_to_string
+//// ```
+//// ## Results in:
+//// ```gemtext
+//// # Welcome to Glemini!
+//// This is a simple gemini server library
+//// => gemini://geminiprotocol.net Gemini Website
+//// ```
+
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string

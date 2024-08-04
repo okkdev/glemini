@@ -1,19 +1,16 @@
 //// Main Glemini module. Contains the server and response functions.
 //// # Example usage:
 //// ```gleam
-//// io.println("Starting server!")
 //// let config =
 ////   new_config()
 ////   |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
-////   |> add_handler(fn(_) {
+////   |> add_handler(fn(req) {
 ////     case req.path {
 ////       "/" -> gemtext_response([gemtext.heading1("Welcome to Glemini!")])
 ////       _ -> not_found_response()
 ////     }
 ////   })
 //// let assert Ok(_) = start(config)
-//// io.println("Server running!")
-//// process.sleep_forever()
 //// ```
 
 import gleam/bit_array
@@ -64,9 +61,13 @@ pub fn main() {
   let config =
     new_config()
     |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
-    |> add_handler(fn(_) {
-      [gemtext.heading1("Welcome to Glemini!")]
-      |> gemtext_response()
+    |> add_handler(fn(req) {
+      case req.path {
+        "/" ->
+          [gemtext.heading1("Welcome to Glemini!")]
+          |> gemtext_response()
+        _ -> not_found_response()
+      }
     })
 
   let assert Ok(_) = start(config)
@@ -76,14 +77,14 @@ pub fn main() {
 }
 
 /// Starts the gemini server.
-/// Expects a complete `ServerConfig`
+/// Expects a `ServerConfig`
 /// # Example
 /// ```gleam
 /// new_config()
 /// |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
 /// |> add_handler(fn(req) {
 ///   case req.path {
-///     "/" -> gemtext_response([gemtext.heading1("Welcome to Glemini!")])
+///     "/hello" -> gemtext_response([gemtext.heading1("Welcome to Glemini!")])
 ///     _ -> not_found_response()
 ///   }
 /// })
@@ -269,7 +270,7 @@ fn error_handler(error: GleminiError) -> Response {
   case error {
     RequestParseError -> bad_request_response("Couldn't parse request.")
     RequestSchemeError -> bad_request_response("Bad request scheme.")
-    _ -> temporary_failure_response("Unknown error")
+    // _ -> temporary_failure_response("Unknown error")
   }
 }
 
