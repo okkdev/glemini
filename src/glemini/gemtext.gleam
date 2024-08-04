@@ -16,23 +16,25 @@ pub opaque type Line {
   Preformatted(text: String, caption: Option(String))
 }
 
-pub fn to_string(lines: Lines) {
-  list.map(lines, fn(line) {
-    case line {
-      Text(text:) -> text
-      Link(uri:, caption: Some(caption)) -> "=> " <> uri <> " " <> caption
-      Link(uri:, caption: None) -> "=> " <> uri
-      Heading1(text:) -> "# " <> text
-      Heading2(text:) -> "## " <> text
-      Heading3(text:) -> "### " <> text
-      ListItem(text:) -> "* " <> text
-      Qoute(text:) -> "> " <> text
-      Preformatted(text:, caption: Some(caption)) ->
-        "```" <> caption <> "\n" <> text <> "\n```"
-      Preformatted(text:, caption: None) -> "```\n" <> text <> "\n```"
-    }
-  })
+pub fn lines_to_string(lines: Lines) -> String {
+  list.map(lines, line_to_string)
   |> string.join("\n")
+}
+
+pub fn line_to_string(line: Line) -> String {
+  case line {
+    Text(text:) -> text
+    Link(uri:, caption: Some(caption)) -> "=> " <> uri <> " " <> caption
+    Link(uri:, caption: None) -> "=> " <> uri
+    Heading1(text:) -> "# " <> text
+    Heading2(text:) -> "## " <> text
+    Heading3(text:) -> "### " <> text
+    ListItem(text:) -> "* " <> text
+    Qoute(text:) -> "> " <> text
+    Preformatted(text:, caption: Some(caption)) ->
+      "```" <> caption <> "\n" <> text <> "\n```"
+    Preformatted(text:, caption: None) -> "```\n" <> text <> "\n```"
+  }
 }
 
 pub fn text(text: String) -> Line {

@@ -56,8 +56,20 @@ pub fn main() {
   process.sleep_forever()
 }
 
-/// Start the gemini server.
-/// Expects a `ServerConfig`
+/// Starts the gemini server.
+/// Expects a complete `ServerConfig`
+/// # Example
+/// ```gleam
+/// new_config()
+/// |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
+/// |> add_handler(fn(req) {
+///   case req.path {
+///     "/" -> gemtext_response([gemtext.heading1("Welcome to Glemini!")])
+///     _ -> not_found_response()
+///   }
+/// })
+/// |> start
+/// ```
 pub fn start(
   config: ServerConfig,
 ) -> Result(Subject(supervisor.Message), StartError) {
@@ -94,7 +106,7 @@ pub fn add_ssl(
 
 /// Adds a request handler to the server configuration.
 /// The request handler is your main function where you'll do routing.
-/// # Example
+/// # Example handler
 /// ```gleam
 /// fn my_request_handler(req: Request) -> Response {
 ///   case req.path {
@@ -114,8 +126,12 @@ pub fn add_handler(
 
 // Success
 
+pub fn success_response(mimetype: String, body: String) -> Response {
+  SuccessResponse(20, mimetype, body)
+}
+
 pub fn gemtext_response(lines: gemtext.Lines) -> Response {
-  SuccessResponse(20, "text/gemini", gemtext.to_string(lines))
+  SuccessResponse(20, "text/gemini", gemtext.lines_to_string(lines))
 }
 
 // Input
@@ -184,16 +200,16 @@ pub fn bad_request_response() -> Response {
 
 // Certificate errors
 
-pub fn client_certificate_required_response() -> Response {
-  ErrorResponse(60, None)
+pub fn client_certificate_required_response(message: String) -> Response {
+  ErrorResponse(60, Some(message))
 }
 
-pub fn certificate_not_authorised_response() -> Response {
-  ErrorResponse(61, None)
+pub fn certificate_not_authorized_response(message: String) -> Response {
+  ErrorResponse(61, Some(message))
 }
 
-pub fn certificate_not_valid_response() -> Response {
-  ErrorResponse(62, None)
+pub fn certificate_not_valid_response(message: String) -> Response {
+  ErrorResponse(62, Some(message))
 }
 
 // Helpers

@@ -20,7 +20,7 @@ pub fn gemtext_test() {
     gemtext.preformatted("  this is\n    preformatted\n      text"),
     gemtext.preformatted_with_caption("fn gleam() {}", "gleam"),
   ]
-  |> gemtext.to_string
+  |> gemtext.lines_to_string
   |> should.equal(
     "# Welcome to Glemini!
 => / Home
