@@ -1,3 +1,5 @@
+//// Main Glemini module. Contains the server and response functions.
+
 import gleam/bit_array
 import gleam/bytes_builder
 import gleam/erlang/process.{type Subject}
@@ -13,6 +15,7 @@ import glisten.{type StartError, Packet}
 
 import glemini/gemtext
 
+/// Glemini server configuration.
 pub type ServerConfig {
   ServerConfig(
     port: Int,
@@ -126,94 +129,114 @@ pub fn add_handler(
 
 // Success
 
+/// Creates a success response, status 20, with a given mimetype and body.
 pub fn success_response(mimetype: String, body: String) -> Response {
   SuccessResponse(20, mimetype, body)
 }
 
+/// Creates a success response, status 20, with a gemtext body created from a list of gemtext lines.
 pub fn gemtext_response(lines: gemtext.Lines) -> Response {
   SuccessResponse(20, "text/gemini", gemtext.lines_to_string(lines))
 }
 
 // Input
 
+/// Creates an input response, status 10, with a given prompt.
 pub fn input_response(prompt: String) -> Response {
   InputResponse(10, prompt)
 }
 
+/// Creates a sensitive input response, status 11, with a given prompt.
 pub fn sensitive_input_response(prompt: String) -> Response {
   InputResponse(11, prompt)
 }
 
 // Redirects
 
+/// Creates a temporary redirect response, status 30, with a given uri.
 pub fn temporary_redirect_response(uri: String) -> Response {
   RedirectResponse(30, uri)
 }
 
+/// Creates a permanent redirect response, status 31, with a given uri.
 pub fn permanent_redirect_response(uri: String) -> Response {
   RedirectResponse(31, uri)
 }
 
 // Temporary errors
 
+/// Creates a temporary failure response, status 40, with a given message.
 pub fn temporary_failure_response(message: String) -> Response {
   ErrorResponse(40, Some(message))
 }
 
+/// Creates a server unavailable response, status 41.
 pub fn server_unavailable_response() -> Response {
   ErrorResponse(41, None)
 }
 
+/// Creates a CGI error response, status 42.
 pub fn cgi_error_response() -> Response {
   ErrorResponse(42, None)
 }
 
+/// Creates a proxy error response, status 43.
 pub fn proxy_error_response() -> Response {
   ErrorResponse(43, None)
 }
 
+/// Creates a slow down response, status 44.
 pub fn slow_down_response() -> Response {
   ErrorResponse(44, None)
 }
 
 // Permanent errors
 
+/// Creates a permanent failure response, status 50, with a given message.
 pub fn permanent_failure_response(message: String) -> Response {
   ErrorResponse(50, Some(message))
 }
 
+/// Creates a not found response, status 51.
 pub fn not_found_response() -> Response {
   ErrorResponse(51, None)
 }
 
+/// Creates a gone response, status 52.
 pub fn gone_response() -> Response {
   ErrorResponse(52, None)
 }
 
+/// Creates a proxy request refused response, status 53.
 pub fn proxy_request_refused_response() -> Response {
   ErrorResponse(53, None)
 }
 
+/// Creates a bad request response, status 59.
 pub fn bad_request_response() -> Response {
   ErrorResponse(59, None)
 }
 
 // Certificate errors
 
+/// Creates a client certificate required response, status 60, with a given message.
 pub fn client_certificate_required_response(message: String) -> Response {
   ErrorResponse(60, Some(message))
 }
 
+/// Creates a certificate not authorized response, status 61, with a given message.
 pub fn certificate_not_authorized_response(message: String) -> Response {
   ErrorResponse(61, Some(message))
 }
 
+/// Creates a certificate not valid response, status 62, with a given message.
 pub fn certificate_not_valid_response(message: String) -> Response {
   ErrorResponse(62, Some(message))
 }
 
 // Helpers
 
+/// Parse a request and pass it to the handler function.
 fn handle_gemini_request(
   req: BitArray,
   handler: fn(Request) -> Response,
@@ -225,6 +248,7 @@ fn handle_gemini_request(
   |> Ok
 }
 
+/// Parse a request from a BitArray into a Request type.
 fn parse_request(req: BitArray) -> Result(Request, GleminiError) {
   use req <- result.try(
     bit_array.to_string(req)
@@ -250,6 +274,7 @@ fn parse_request(req: BitArray) -> Result(Request, GleminiError) {
   }
 }
 
+/// Convert a Response to a string.
 fn response_to_string(res: Response) -> String {
   case res {
     SuccessResponse(status, mimetype, body) ->

@@ -2,9 +2,11 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string
 
+/// Type alias for a list of gemtext lines.
 pub type Lines =
   List(Line)
 
+/// Type representing gemtext lines.
 pub opaque type Line {
   Text(text: String)
   Link(uri: String, caption: Option(String))
@@ -16,11 +18,13 @@ pub opaque type Line {
   Preformatted(text: String, caption: Option(String))
 }
 
+/// Convert a list of gemtext lines into a string.
 pub fn lines_to_string(lines: Lines) -> String {
   list.map(lines, line_to_string)
   |> string.join("\n")
 }
 
+/// Convert a gemtext line into a string.
 pub fn line_to_string(line: Line) -> String {
   case line {
     Text(text:) -> text
