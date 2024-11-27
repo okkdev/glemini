@@ -3,7 +3,7 @@
 //// ```gleam
 //// let config =
 ////   new_config()
-////   |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
+////   |> add_certificate(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
 ////   |> add_handler(fn(req) {
 ////     case req.path {
 ////       "/" -> gemtext_response([gemtext.heading1("Welcome to Glemini!")])
@@ -15,6 +15,7 @@
 
 import gleam/bit_array
 import gleam/bytes_builder
+import gleam/dynamic.{type Dynamic}
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/io
@@ -26,7 +27,19 @@ import gleam/string
 import gleam/uri
 import glisten.{type StartError, Packet}
 
+import glisten/socket/options
+import glisten/ssl
+
 import glemini/gemtext
+
+@external(erlang, "ssl", "peercert")
+fn peercert(socket: glisten.Socket) -> Result(Dynamic, Nil)
+
+@external(erlang, "ssl", "ssl_accept")
+fn ssl_accept(socket: glisten.Socket) -> Dynamic
+
+@external(erlang, "glemini_ffi", "peer_certificate")
+fn peer_certificate(socket: glisten.Socket) -> Result(Dynamic, Nil)
 
 /// Glemini server configuration.
 pub type ServerConfig {
@@ -39,7 +52,12 @@ pub type ServerConfig {
 }
 
 pub opaque type Request {
-  Request(host: String, path: String, query: String)
+  Request(
+    host: String,
+    path: String,
+    query: Option(String),
+    certificate: Option(String),
+  )
 }
 
 pub type Response {
@@ -60,7 +78,7 @@ pub fn main() {
 
   let config =
     new_config()
-    |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
+    |> add_certificate(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
     |> add_handler(fn(req) {
       case req.path {
         "/" ->
@@ -81,7 +99,7 @@ pub fn main() {
 /// # Example
 /// ```gleam
 /// new_config()
-/// |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
+/// |> add_certificate(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
 /// |> add_handler(fn(req) {
 ///   case req.path {
 ///     "/hello" -> gemtext_response([gemtext.heading1("Welcome to Glemini!")])
@@ -90,22 +108,32 @@ pub fn main() {
 /// })
 /// |> start
 /// ```
-pub fn start(
-  config: ServerConfig,
-) -> Result(Subject(supervisor.Message), StartError) {
-  glisten.handler(fn(_conn) { #(Nil, None) }, fn(req, _state, conn) {
-    let assert Packet(req) = req
-    let response =
-      handle_gemini_request(req, config.request_handler)
-      |> response_to_string
-    let assert Ok(_) = glisten.send(conn, bytes_builder.from_string(response))
-    actor.Stop(process.Normal)
-  })
-  |> glisten.serve_ssl(
-    port: config.port,
-    certfile: config.certfile,
-    keyfile: config.keyfile,
+pub fn start(config: ServerConfig) -> Result(Nil, Nil) {
+  use listener <- result.try(
+    ssl.listen(config.port, [
+      options.Certfile(config.certfile),
+      options.Keyfile(config.keyfile),
+    ])
+    |> result.replace_error(Nil),
   )
+  use socket <- result.try(ssl.accept(listener) |> result.replace_error(Nil))
+  use msg <- result.try(ssl.receive(socket, 0) |> result.replace_error(Nil))
+
+  io.debug(msg)
+  Ok(Nil)
+  // glisten.handler(fn(_conn) { #(Nil, None) }, fn(req, _state, conn) {
+  //   let assert Packet(req) = req
+  //   let response =
+  //     handle_gemini_request(req, conn, config.request_handler)
+  //     |> response_to_string
+  //   let assert Ok(_) = glisten.send(conn, bytes_builder.from_string(response))
+  //   actor.Stop(process.Normal)
+  // })
+  // |> glisten.serve_ssl(
+  //   port: config.port,
+  //   certfile: config.certfile,
+  //   keyfile: config.keyfile,
+  // )
 }
 
 // Config
@@ -117,8 +145,8 @@ pub fn new_config() -> ServerConfig {
   })
 }
 
-/// Adds ssl configuration to the server configuration.
-pub fn add_ssl(
+/// Adds server certificate to the server configuration.
+pub fn add_certificate(
   config: ServerConfig,
   certfile certfile: String,
   keyfile keyfile: String,
@@ -258,9 +286,10 @@ pub fn certificate_not_valid_response(message: String) -> Response {
 /// Parse a request and pass it to the handler function.
 fn handle_gemini_request(
   req: BitArray,
+  conn: glisten.Connection(a),
   handler: fn(Request) -> Response,
 ) -> Response {
-  case parse_request(req) {
+  case parse_request(req, conn) {
     Ok(request) -> handler(request)
     Error(error) -> error_handler(error)
   }
@@ -275,7 +304,10 @@ fn error_handler(error: GleminiError) -> Response {
 }
 
 /// Parse a request from a BitArray into a Request type.
-fn parse_request(req: BitArray) -> Result(Request, GleminiError) {
+fn parse_request(
+  req: BitArray,
+  conn: glisten.Connection(a),
+) -> Result(Request, GleminiError) {
   use req <- result.try(
     bit_array.to_string(req)
     |> result.map(fn(x) { string.trim(x) })
@@ -286,16 +318,23 @@ fn parse_request(req: BitArray) -> Result(Request, GleminiError) {
     uri.parse(req) |> result.replace_error(RequestParseError),
   )
 
+  // let cert =
+  //   case peercert(conn.socket) {
+  //     Ok(cert) -> Some(cert)
+  //     Error(_) -> None
+  //   }
+  //   |> io.debug
+  // peer_certificate(conn.socket) |> io.debug
+  // peercert(conn.socket) |> io.debug
+
   case uri {
     uri.Uri(
       scheme: Some("gemini"),
       host: Some(host),
-      query: Some(query),
+      query: query,
       path: path,
       ..,
-    ) -> Ok(Request(host, path, query))
-    uri.Uri(scheme: Some("gemini"), host: Some(host), path: path, ..) ->
-      Ok(Request(host, path, ""))
+    ) -> Ok(Request(host, path, query, None))
     _ -> Error(RequestSchemeError)
   }
 }

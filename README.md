@@ -22,7 +22,7 @@ Create the gemini server with a request handler:
 import gleam/erlang/process
 import gleam/io
 import glemini.{
-  add_handler, add_ssl, gemtext_response, new_config, not_found_response, start,
+  add_handler, add_certificate, gemtext_response, new_config, not_found_response, start,
 }
 import glemini/gemtext.{heading1, text}
 
@@ -31,7 +31,7 @@ pub fn main() {
 
   let config =
     new_config()
-    |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
+    |> add_certificate(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
     |> add_handler(fn(request) {
       case request.path {
         "/" ->
