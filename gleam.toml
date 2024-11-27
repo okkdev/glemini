@@ -9,7 +9,7 @@ repository = { type = "github", user = "okkdev", repo = "glemini" }
 gleam_stdlib = ">= 0.34.0 and < 2.0.0"
 gleam_erlang = ">= 0.25.0 and < 1.0.0"
 gleam_otp = ">= 0.10.0 and < 1.0.0"
-glisten = ">= 4.0.0 and < 5.0.0"
+glisten = { path = "../glisten" }
 
 [dev-dependencies]
 gleeunit = ">= 1.0.0 and < 2.0.0"
