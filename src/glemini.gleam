@@ -3,7 +3,7 @@
 //// ```gleam
 //// let config =
 ////   new_config()
-////   |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
+////   |> add_certificate(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
 ////   |> add_handler(fn(req) {
 ////     case req.path {
 ////       "/" -> gemtext_response([gemtext.heading1("Welcome to Glemini!")])
@@ -39,7 +39,12 @@ pub type ServerConfig {
 }
 
 pub opaque type Request {
-  Request(host: String, path: String, query: String)
+  Request(
+    host: String,
+    path: String,
+    query: String,
+    certificate: Option(Certificate),
+  )
 }
 
 pub type Response {
@@ -54,13 +59,20 @@ pub opaque type GleminiError {
   RequestSchemeError
 }
 
+pub opaque type Certificate {
+  Certificate(issuer: String, subject: String, der_encoded: BitArray)
+}
+
+@external(erlang, "glemini_ffi", "peer_certificate")
+fn peer_certificate(socket: glisten.Socket) -> Result(Certificate, Nil)
+
 @internal
 pub fn main() {
   io.println("Starting server!")
 
   let config =
     new_config()
-    |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
+    |> add_certificate(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
     |> add_handler(fn(req) {
       case req.path {
         "/" ->
@@ -81,7 +93,7 @@ pub fn main() {
 /// # Example
 /// ```gleam
 /// new_config()
-/// |> add_ssl(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
+/// |> add_certificate(certfile: "certs/cert.crt", keyfile: "certs/cert.key")
 /// |> add_handler(fn(req) {
 ///   case req.path {
 ///     "/hello" -> gemtext_response([gemtext.heading1("Welcome to Glemini!")])
@@ -96,7 +108,7 @@ pub fn start(
   glisten.handler(fn(_conn) { #(Nil, None) }, fn(req, _state, conn) {
     let assert Packet(req) = req
     let response =
-      handle_gemini_request(req, config.request_handler)
+      handle_gemini_request(req, conn, config.request_handler)
       |> response_to_string
     let assert Ok(_) = glisten.send(conn, bytes_builder.from_string(response))
     actor.Stop(process.Normal)
@@ -105,6 +117,16 @@ pub fn start(
     port: config.port,
     certfile: config.certfile,
     keyfile: config.keyfile,
+    // need to somehow add these options:
+  // Cacertfile("/dev/null"),
+  // VerifyPeer(True),
+  // VerifyFun(fn(_, _, _, _) {
+  //   dynamic.from(#(
+  //     atom.create_from_string("valid"),
+  //     atom.create_from_string("unknown_user"),
+  //   ))
+  // }),
+  // FailIfNoPeerCert(False),
   )
 }
 
@@ -117,8 +139,8 @@ pub fn new_config() -> ServerConfig {
   })
 }
 
-/// Adds ssl configuration to the server configuration.
-pub fn add_ssl(
+/// Adds certificate configuration to the server configuration.
+pub fn add_certificate(
   config: ServerConfig,
   certfile certfile: String,
   keyfile keyfile: String,
@@ -258,9 +280,10 @@ pub fn certificate_not_valid_response(message: String) -> Response {
 /// Parse a request and pass it to the handler function.
 fn handle_gemini_request(
   req: BitArray,
+  conn: glisten.Connection(a),
   handler: fn(Request) -> Response,
 ) -> Response {
-  case parse_request(req) {
+  case parse_request(req, conn) {
     Ok(request) -> handler(request)
     Error(error) -> error_handler(error)
   }
@@ -275,7 +298,10 @@ fn error_handler(error: GleminiError) -> Response {
 }
 
 /// Parse a request from a BitArray into a Request type.
-fn parse_request(req: BitArray) -> Result(Request, GleminiError) {
+fn parse_request(
+  req: BitArray,
+  conn: glisten.Connection(a),
+) -> Result(Request, GleminiError) {
   use req <- result.try(
     bit_array.to_string(req)
     |> result.map(fn(x) { string.trim(x) })
@@ -286,6 +312,11 @@ fn parse_request(req: BitArray) -> Result(Request, GleminiError) {
     uri.parse(req) |> result.replace_error(RequestParseError),
   )
 
+  let cert = case peer_certificate(conn.socket) {
+    Ok(cert) -> Some(cert)
+    Error(_) -> None
+  }
+
   case uri {
     uri.Uri(
       scheme: Some("gemini"),
@@ -293,9 +324,9 @@ fn parse_request(req: BitArray) -> Result(Request, GleminiError) {
       query: Some(query),
       path: path,
       ..,
-    ) -> Ok(Request(host, path, query))
+    ) -> Ok(Request(host, path, query, cert))
     uri.Uri(scheme: Some("gemini"), host: Some(host), path: path, ..) ->
-      Ok(Request(host, path, ""))
+      Ok(Request(host, path, "", cert))
     _ -> Error(RequestSchemeError)
   }
 }
